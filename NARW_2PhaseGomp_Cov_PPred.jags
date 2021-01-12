@@ -1,0 +1,78 @@
+
+    model {
+    
+    # Priors:
+      
+      # Informative priors from Fortune et al. 2012
+      K[1] ~ dnorm(2.325,1/(1.25)^2)
+      K[2] ~ dnorm(0.13,1/(0.03)^2)
+      C[1] ~ dnorm(1.017,1/(0.195)^2)
+      C[2] ~ dnorm(0.33,1/(0.02)^2)
+      Linf[1] ~ dnorm(11.93,1/(2.83)^2)
+      Linf[2] ~ dnorm(13.82,1/(0.28)^2)
+
+
+      # Priors for entanglement effects on L
+      # Single L effect is applied across phases
+       for(c in 1:Ncov){
+        L.slope[c] ~ dunif(-10,10) # entanglement effect on L
+        L.sigma[c] ~ dunif(0,10)
+        L.tau[c] = pow(L.sigma[c],-2)
+       }#c
+
+
+      
+      # Sigmas for Birth Year effects:
+      
+      L.BY.slope ~ dunif(-10,10)      
+      L.BY.sigma ~ dunif(0,10)
+      L.BY.tau = pow(L.BY.sigma,-2)
+
+      
+      # Estimate Birth Year Effects:
+    
+      for(t in 1:n.years){
+        L.BY.eff[t] ~ dnorm((t-1)*L.BY.slope, L.BY.tau) # single effect across phases; t-1 to fix first year at 0 effect
+        L.BY.eff.pred[t] ~ dnorm((t-1)*L.BY.slope,L.BY.tau) # posterior prediction
+      }
+  
+      
+      # Covariate Effects:
+    
+      for(i in 1:Nobs){
+        for(c in 1:Ncov){
+          L.Cov.eff[i,c] ~ dnorm(Cov[i,c]*L.slope[c], L.tau[c]) # estimate an effect for each whale's observed covariate value, distributed around the mean effect for that covariate
+          L.Cov.eff.pred[i,c] ~ dnorm(Cov[i,c]*L.slope[c],L.tau[c]) # posterior prediction
+        }
+        
+        # Add BY and Covariate Effects:
+        L.eff[i] <- sum(L.Cov.eff[i,1:Ncov]) + L.BY.eff[BY[i]] # sum covariate effects (plus birth year effect) for each whale
+        L.eff.pred[i] <- sum(L.Cov.eff.pred[i,1:Ncov]) + L.BY.eff.pred[BY[i]] # posterior prediction
+      }
+      
+      # Observation error, estimated separately for each altimeter type
+
+      for(o in 1:obs.types){
+        sigma[o] ~ dunif(0,20)
+        tau[o] = pow(sigma[o],-2)
+      }
+    
+    for(i in 1:Nobs){
+
+      Linf.mu[i] = Linf[Phase[i]] + L.eff[i] # expected asymptotic length for each whale, calculated by adding the total covariate effects on L to the mean L for that growth phase
+      Linf.mu.pred[i] = Linf[Phase[i]] + L.eff.pred[i] # posterior prediction
+      K.mu[i] <- K[Phase[i]] # expected growth rate K depending on growth phase
+      
+      TL.mean[i] = Linf.mu[i]*exp(-C[Phase[i]]*exp(-K.mu[i]*Age[i])) # Gompertz growth equation, used to calculate the expected length of a whale depending on its growth phase
+
+      TL[i] ~ dnorm(TL.mean[i],tau[type[i]]) # observation process, observed size distributed around expected size with altimeter-specific observation error
+
+
+
+      TL.mean.pred[i] = Linf.mu.pred[i]*exp(-C[Phase[i]]*exp(-K.mu[i]*Age[i])) # posterior prediction
+      Post.Pred[i] ~ dnorm(TL.mean.pred[i],tau[type[i]]) # posterior prediction interval for each whale length derived from all upstream posterior predictions
+  
+    }#i
+    
+    }
+    
